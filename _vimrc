@@ -13,25 +13,25 @@ set lazyredraw
 set showcmd
 set nobackup
 set noswapfile
+set listchars=eol:$,tab:>-
+set ttimeoutlen=0
 
 " Wildmenu
 set wildmenu
 set wildmode=longest,list
+set path=**
+set complete=.,w,b,u,t
 
 " One space between sentences please.
 set nojoinspaces
 
-" Wrap to 72 columns by default
-set textwidth=72
-
 " Search
 set incsearch
-set ignorecase
-set smartcase
 
 " Colors and themes
 syntax on
 if has('gui_running') || &t_Co == 256
+    set guicursor+=a:blinkon0
     colorscheme wombat256dave
 else
     colorscheme elflord
@@ -44,11 +44,7 @@ if &term =~ "256color" || &term =~ "xterm"
     end
 end
 if has("x11")
-    if system("xdpyinfo|grep 'dimensions:'|tr x ' '|awk '{print $2}'") > 1440
-        let &guifont="Noto Mono 11"
-    else
-        let &guifont="Noto Mono 10"
-    end
+    let &guifont="Noto Mono 11"
 elseif has("gui_win32")
     let &guifont="Lucida Console:h11"
 end
@@ -81,9 +77,31 @@ filetype on
 filetype plugin on
 filetype indent on
 
+" Set filetype for special cases
+autocmd BufNewFile,BufRead .bash_local set filetype=sh
+
+" Non-programming language files
+autocmd Filetype markdown,mail,text setlocal textwidth=78
+
 " C style
 set cinoptions+=t0  " don't indent function type
 set cinoptions+=l1  " align with case label
+set cinoptions+=:0  " align case with switch
+let c_no_curly_error=1  " Vim still lacks C99 support
+
+" Go
+autocmd Filetype go setlocal makeprg=go\ build
+autocmd Filetype go setlocal noexpandtab shiftwidth=4 tabstop=4 textwidth=72
+autocmd Filetype go map <buffer> <leader>f m`:%!gofmt<cr>``
+autocmd Filetype go map <buffer> <leader>i m`:%!goimports<cr>``
+autocmd Filetype go map <buffer> [[ ?^\(func\\|var\\|type\\|import\\|package\)\><cr>
+autocmd Filetype go map <buffer> ]] /^\(func\\|var\\|type\\|import\\|package\)\><cr>
+
+" Assembly style
+autocmd FileType asm setlocal noexpandtab shiftwidth=8
+
+" Makefile style
+autocmd FileType make setlocal shiftwidth=8
 
 " Build
 set autowrite
@@ -97,15 +115,22 @@ end
 set spelllang=en_us
 set spellfile=~/.vim/spell/en.utf-8.add
 
-" colorcolumn
+" Column stuff
 hi ColorColumn ctermbg=darkgray guibg=darkgray
 map <Leader>C :set colorcolumn=80<CR>
+map <Leader>8 :set columns=80<CR>
+
+" One sentence per line
+map <Leader>w :nn j gj<CR>:nn k gk<CR>:se fo-=t<CR>:se lbr<CR>
 
 " Extras
 map <Leader>q :hi Error NONE<CR>
 map <Leader>t :silent !ctags -R<CR>
-map <Leader>w :nnoremap j gj<CR>:nnoremap k gk<CR>
 map <Leader>c :%s/\s\+$//e<CR>
+map <Leader>r :syntax sync fromstart<CR>
+map <Leader>( %%%r(r)%
+map <Leader>[ %%%r[r]%
+map <Leader>{ %%%r{r}%
 
 " Crypto (via Enchive)
 map <Leader>pe :'<,'>!enchive archive \| base64<CR>

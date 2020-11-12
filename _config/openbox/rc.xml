@@ -123,9 +123,6 @@
   <keybind key="W-v">
     <action name="ToggleMaximizeVert"/>
   </keybind>
-  <keybind key="W-h">
-    <action name="ToggleMaximizeHorz"/>
-  </keybind>
   <keybind key="W-Up">
     <action name="MaximizeFull"/>
   </keybind>
@@ -182,7 +179,7 @@
   </keybind>
 
   <!-- Window layer -->
-  <keybind key="W-l">
+  <keybind key="W-space">
     <action name="ToggleAlwaysOnTop"/>
   </keybind>
   <keybind key="W-o">
@@ -573,6 +570,14 @@
     </position>
     <maximized>vertical</maximized>
   </application>
+  <application name="kitty">
+    <focus>yes</focus>
+    <position>
+      <x>-0</x>
+      <y>0</y>
+    </position>
+    <maximized>vertical</maximized>
+  </application>
   <application name="xterm">
     <focus>yes</focus>
     <position>
@@ -598,15 +603,8 @@
     <maximized>vertical</maximized>
   </application>
   <application name="dosbox">
-    <focus>no</focus>
     <position>
-      <x>-0</x><y>0</y>
-    </position>
-  </application>
-  <application name="XDosEmu">
-    <focus>no</focus>
-    <position>
-      <x>-0</x><y>0</y>
+      <x>0</x><y>0</y>
     </position>
   </application>
 </applications>

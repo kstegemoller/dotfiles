@@ -4,25 +4,53 @@
 # software. Package files are tarballs created (-C) via DESTDIR
 # installs. These package files can be installed (-I) and uninstalled
 # (-U) at will.
-
+#
+# Special Notes
+# =============
+#
 # The build helper (-B) will run the configure script and fire off make
 # with the appropriate number of jobs. It automatically handles the
-# --prefix=... configure argument.
-
+# --prefix=... configure argument. You may still need to manually
+# override LDFLAGS with the compiler's -L for $LIBRARY_PATH since that
+# environment variable does *not* override system libraries. The -l
+# option can do this for you.
+#
 # There is no check that a package being installed will clobber an
 # existing package. It will overwrite any existing files. If you are
 # concerned, you can verify (-V) a package before installing it.
-
+#
 # To assist with software that doesn't use a configure script, PREFIX is
 # automatically set during "make install" (-C). Like with build (-B),
 # all additional arguments are passed to make.
-
+#
+# When using the -l (set $LDFLAGS) option without a standard configure
+# script, you probably need to use make's -e option to ensure it picks
+# it up from the environment. For example:
+#
+#     $ qpkg -lC foo-1.2.3 -e
+#
+# Environment
+# ===========
+#
 # The environment variable QPKG_PREFIX determines the installation
 # prefix. It defaults to "$HOME/.local". This path is not stored
 # anywhere in the package, so you *must* ensure it is consistent across
 # all commands for a particular package.
-
-# Example: This sequence of commands will create an package file named
+#
+# To make proper use of the packages you install, you very likely want
+# to set and export the following environment variables:
+#
+# export C_INCLUDE_PATH=$QPKG_PREFIX/include
+# export CPLUS_INCLUDE_PATH=$QPKG_PREFIX/include
+# export LIBRARY_PATH=$QPKG_PREFIX/lib
+# export LD_LIBRARY_PATH=$QPKG_PREFIX/lib
+# export LD_RUN_PATH=$QPKG_PREFIX/lib
+# export PKG_CONFIG_PATH=$QPKG_PREFIX/lib/pkgconfig
+#
+# Example Usage
+# =============
+#
+# This sequence of commands will create an package file named
 # "emacs-25-minimal.tgz".
 # 
 #    $ tar xzf emacs-25.3.tar.gz
@@ -42,6 +70,8 @@
 # And uninstall later:
 #
 #    $ qpkg -U emacs-25-minimal.tgz
+#
+# This is free and unencumbered software released into the public domain.
 
 set -e
 IFS='
@@ -52,20 +82,22 @@ directory=.
 make=make
 prefix=${QPKG_PREFIX:-$HOME/.local}
 keep=false
+ldflags=false
 
 usage() {
-    printf "Usage: qpkg -B [-d BUILD_DIR] [-m MAKE] SRC/ [configure args...]\n"
-    printf "            -C [-d BUILD_DIR] [-k] [-m MAKE] PKG [make args...]\n"
+    printf "Usage: qpkg -B [-d DIR] [-l] [-m MAKE] SRC/ [configure args...]\n"
+    printf "            -C [-d DIR] [-kl] [-m MAKE] PKG [make args...]\n"
     printf "            -I PKG.tgz\n"
     printf "            -U PKG.tgz\n"
     printf "            -V PKG.tgz\n"
     printf "Options:\n"
     printf "  -d DIR    path of the build directory\n"
     printf "  -k        keep the DESTDIR install directory (_destdir/)\n"
+    printf "  -l        set and export LDFLAGS to use LIBRARY_PATH\n"
     printf "  -m MAKE   name of the make program (make)\n"
 }
 
-while getopts BCIUVd:hkm: name
+while getopts BCIUVd:hklm: name
 do
     case $name in
     B) command=B;;
@@ -77,12 +109,22 @@ do
     h) usage
         exit 0;;
     k) keep=true;;
+    l) ldflags=true;;
     m) make="$OPTARG";;
     ?) usage
         exit 2;;
     esac
 done
 shift $(($OPTIND - 1))
+
+if [ $ldflags = true ]; then
+    export LDFLAGS=$(
+        IFS=:
+        for path in $LIBRARY_PATH; do
+            printf '%s ' -L$path
+        done
+    )
+fi
 
 nproc() {
     if $(which nproc >/dev/null 2>&1); then
@@ -94,10 +136,17 @@ nproc() {
     fi
 }
 
+realpath() {
+    case "$1" in
+	/*) printf '%s' "$1" ;;
+	*)  printf '%s/%s' "$PWD" "$1" ;;
+    esac
+}
+
 build() {
-    src="$(readlink -f "$1")"
+    src="$(realpath "$1")"
     mkdir -p "$directory"
-    build="$(readlink -f "$directory")"
+    build="$(realpath "$directory")"
     jobs=$(nproc)
     shift
     (cd "$build"
@@ -106,26 +155,26 @@ build() {
 }
 
 create() {
-    pkgfile="$(readlink -f $(dirname "$1.tgz"))/$(basename "$1.tgz")"
-    destdir="$(readlink -f _destdir)"
+    pkgfile="$(realpath $(dirname "$1.tgz"))/$(basename "$1.tgz")"
+    destdir="$(realpath _destdir)"
     shift
     if [ $keep = false ]; then rm -rf "$destdir"; fi
     mkdir -p "$destdir"
     (cd "$directory"
-    "$make" install PREFIX="$prefix" DESTDIR="$destdir" "$@"
+    "$make" install prefix="$prefix" PREFIX="$prefix" DESTDIR="$destdir" "$@"
     tar czf "$pkgfile" -C "$destdir$prefix" .
     if [ $keep = false ]; then rm -rf "$destdir"; fi)
 }
 
 install() {
     mkdir -p "$prefix"
-    pkgfile=$(readlink -f "$1")
+    pkgfile=$(realpath "$1")
     (cd "$prefix"
     tar xzf "$pkgfile")
 }
 
 uninstall() {
-    pkgfile=$(readlink -f "$1")
+    pkgfile=$(realpath "$1")
     (cd "$prefix"
     for file in $(tar tzf "$pkgfile" | grep -v '/$'); do
         rm -f "$file"
@@ -134,7 +183,7 @@ uninstall() {
 }
 
 verify() {
-    pkgfile=$(readlink -f "$1")
+    pkgfile=$(realpath "$1")
     status=0
     cd "$prefix"
     for file in $(tar tzf "$pkgfile" | grep -v '/$'); do

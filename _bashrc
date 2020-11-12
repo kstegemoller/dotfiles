@@ -7,6 +7,7 @@ set +o histexpand
 
 ## Key bindings
 bind '\C-w:backward-kill-word' 2>/dev/null
+stty -ixon >/dev/null 2>&1 || true # disable flow control (XON/XOFF)
 
 ## Completions
 _systemctl() {
@@ -25,32 +26,115 @@ _PS1() {
     ((${#NAME}>$LENGTH)) && NAME="/...${NAME:$[${#NAME}-LENGTH+4]}";
     echo "$PRE$NAME"
 }
-PS1='\[\e[1;32m\]\h\[\e[m\]\
-\[\e[1;35m\]$(_PS1 "$PWD" 30)\[\e[m\] '
+PS1='\[\e[1;92m\]\h\[\e[m\]\
+\[\e[1;95m\]$(_PS1 "$PWD" 30)\[\e[m\] '
 export EDITOR="vim"
 export BROWSER="firefox"
 if [ "$TERM" = "dumb" ]; then
     PS1="> "
 fi
-export WINEDEBUG=fixme-all
+export WINEDEBUG=-all
+
+if [ -e ~/.dpi ]; then
+    source ~/.dpi
+fi
 
 ## Identity
 export REALNAME="Christopher Wellons"
-export NAME="$REALNAME"
 export EMAIL="wellons@nullprogram.com"
+export GIT_COMMITTER_NAME="$REALNAME"
+export GIT_AUTHOR_NAME="$REALNAME"
+export KEYID="5EEB8C8D5069C4E9B94AA852AFD1503A8C8FF42A"
 
-## Places
-export PATH=~/.local/bin:/sbin:/usr/sbin:~/.local/games:$PATH
-export LIBRARY_PATH=~/.local/lib
-export C_INCLUDE_PATH=~/.local/include
-export CPLUS_INCLUDE_PATH=~/.local/include
-export LD_LIBRARY_PATH=~/.local/lib
-export PKG_CONFIG_PATH=~/.local/lib/pkgconfig
-export PERL5LIB=~/.local/lib
+## PATH variables
+add() {
+    # Prepend $1 to $2 if not in $2
+    if [[ ":$2:" != *":$1:"* ]]; then
+        if [ -z "$2" ]; then
+            printf '%s' "$1"
+        else
+            printf '%s' "$1:$2"
+        fi
+    else
+        printf '%s' "$2"
+    fi
+}
+restore() {
+    # Restore pre-configuration paths
+    while getopts H opt
+    do
+        case "$opt" in
+        H) exec env -i HOME=$HOME TERM=$TERM bash -l ;;
+        ?) return 1 ;;
+        esac
+    done
+    if [ "$ORIG_SAVED" = yes ]; then
+        PATH="$ORIG_PATH"
+        C_INCLUDE_PATH="$ORIG_C_INCLUDE_PATH"
+        CPLUS_INCLUDE_PATH="$ORIG_CPLUS_INCLUDE_PATH"
+        LIBRARY_PATH="$ORIG_LIBRARY_PATH"
+        LD_LIBRARY_PATH="$ORIG_LD_LIBRARY_PATH"
+        LD_RUN_PATH="$ORIG_LD_RUN_PATH"
+        PKG_CONFIG_PATH="$ORIG_PKG_CONFIG_PATH"
+    fi
+    hash -r
+}
+if [ "$ORIG_SAVED" != yes ]; then
+    # Save pre-configuration paths
+    export ORIG_SAVED=yes
+    export ORIG_PATH="$PATH"
+    export ORIG_C_INCLUDE_PATH="$C_INCLUDE_PATH"
+    export ORIG_CPLUS_INCLUDE_PATH="$CPLUS_INCLUDE_PATH"
+    export ORIG_LIBRARY_PATH="$LIBRARY_PATH"
+    export ORIG_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+    export ORIG_LD_RUN_PATH="$LD_LD_RUN_PATH"
+    export ORIG_PKG_CONFIG_PATH="$PKG_CONFIG_PATH"
+fi
+PATH=$(add /usr/sbin "$PATH")
+PATH=$(add /sbin "$PATH")
+PATH=$(add ~/.local/games "$PATH")
+PATH=$(add ~/.local/bin "$PATH")
+C_INCLUDE_PATH=$(add ~/.local/include "$C_INCLUDE_PATH")
+CPLUS_INCLUDE_PATH=$(add ~/.local/include "$CPLUS_INCLUDE_PATH")
+LIBRARY_PATH=$(add ~/.local/lib "$LIBRARY_PATH")
+LD_LIBRARY_PATH=$(add ~/.local/lib "$LD_LIBRARY_PATH")
+LD_RUN_PATH=$(add ~/.local/lib "$LD_RUN_PATH")
+if [[ "$(uname -m)" == *64* ]]; then
+    LIBRARY_PATH=$(add ~/.local/lib64 "$LIBRARY_PATH")
+    LD_LIBRARY_PATH=$(add ~/.local/lib64 "$LD_LIBRARY_PATH")
+    LD_RUN_PATH=$(add ~/.local/lib64 "$LD_RUN_PATH")
+else
+    LIBRARY_PATH=$(add ~/.local/lib32 "$LIBRARY_PATH")
+    LD_LIBRARY_PATH=$(add ~/.local/lib32 "$LD_LIBRARY_PATH")
+    LD_RUN_PATH=$(add ~/.local/lib32 "$LD_RUN_PATH")
+fi
+PKG_CONFIG_PATH=$(add ~/.local/lib/pkgconfig "$PKG_CONFIG_PATH")
+export C_INCLUDE_PATH
+export CPLUS_INCLUDE_PATH
+export LIBRARY_PATH
+export LD_LIBRARY_PATH
+export LD_RUN_PATH
+export PKG_CONFIG_PATH
+
+## XDG
+XDG_DESKTOP_DIR="$HOME/trash/"
+XDG_DOCUMENTS_DIR="$HOME/trash/"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_MUSIC_DIR="$HOME/trash/"
+XDG_PICTURES_DIR="$HOME/trash/"
+XDG_PUBLICSHARE_DIR="$HOME/trash/"
+XDG_TEMPLATES_DIR="$HOME/trash/"
+XDG_VIDEOS_DIR="$HOME/trash/"
+
+## libvirt
 export LIBVIRT_DEFAULT_URI=qemu:///system
 
+## Go
+PATH=$(add "${GOPATH:-$HOME/go}/bin" "$PATH")
+export GO111MODULE=on
+
 ## Agents
-if $(command -v keychain > /dev/null 2>&1); then
+if command -v keychain > /dev/null 2>&1; then
     eval $(keychain --eval --quiet)
 fi
 
@@ -95,24 +179,20 @@ nproc() {
     fi
 }
 
-httpsd() {
-    remote_port=${1:-9443}
-    local_port=${2:-9080}
-    keyfile="${TMPDIR:-/tmp}/K_$(tr -cd 'a-f0-9' < /dev/urandom | head -c32)"
-    # Generate a fresh, unencrypted, self-signed key. Since stunnel3
-    # cannot read a key from a pipe, write it to a temporary file.
-    # Also, create a daemon suicide pact via subshell trap.
-    (trap 'rm -f "$keyfile"; kill $(jobs -p) 2> /dev/null' SIGINT SIGTERM EXIT
-     set -euo pipefail
-     umask 0177
-     openssl req -x509 -nodes \
-             -subj "/CN=$(hostname)" \
-             -newkey rsa:2048 \
-             -keyout /dev/stdout \
-             -out /dev/stdout \
-             -days 365 > "$keyfile"
-     python3 -m http.server "$local_port" --bind 127.0.0.1 &
-     stunnel3 -f -P '' -r "$local_port" -d "$remote_port" -p "$keyfile")
+hh() {
+    if command -v hastyhex >/dev/null 2>&1; then
+        hastyhex "$@" | less -FRX
+    else
+        hexdump -C "$@" | less -FRX
+    fi
+}
+
+loadssh() {
+    passphrase2pgp -fssh -c5106E713 -uwellons@p2 | ssh-add -
+}
+
+httpd() {
+    python3 -m http.server "${1:-8001}"
 }
 
 ## Aliases
